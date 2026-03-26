@@ -1,0 +1,1304 @@
+import { useState, useEffect } from "react";
+
+// ─── STORAGE HELPERS ──────────────────────────────────────────────────────────
+const STORAGE_KEYS = {
+  ROUTINE: "gymapp_routine",
+  LOGS: "gymapp_logs",
+  NUTRITION: "gymapp_nutrition",
+};
+
+async function load(key) {
+  try {
+    const r = await window.storage.get(key);
+    return r ? JSON.parse(r.value) : null;
+  } catch {
+    return null;
+  }
+}
+async function save(key, value) {
+  try {
+    await window.storage.set(key, JSON.stringify(value));
+  } catch {}
+}
+
+// ─── DEFAULT DATA ─────────────────────────────────────────────────────────────
+const DEFAULT_ROUTINE = [
+  {
+    id: "lun",
+    label: "LUN",
+    name: "Lunes",
+    muscle: "Pecho / Tríceps",
+    exercises: [
+      { id: "e1", name: "Press banca plano", sets: 4, reps: 10, weight: 60 },
+      { id: "e2", name: "Press inclinado mancuernas", sets: 3, reps: 12, weight: 22 },
+      { id: "e3", name: "Fondos en paralelas", sets: 3, reps: 12, weight: 0 },
+      { id: "e4", name: "Extensión tríceps polea", sets: 3, reps: 15, weight: 25 },
+    ],
+  },
+  {
+    id: "mar",
+    label: "MAR",
+    name: "Martes",
+    muscle: "Espalda / Bíceps",
+    exercises: [
+      { id: "e5", name: "Dominadas", sets: 4, reps: 8, weight: 0 },
+      { id: "e6", name: "Remo con barra", sets: 4, reps: 10, weight: 70 },
+      { id: "e7", name: "Jalón al pecho", sets: 3, reps: 12, weight: 55 },
+      { id: "e8", name: "Curl con mancuernas", sets: 3, reps: 12, weight: 14 },
+    ],
+  },
+  {
+    id: "mie",
+    label: "MIÉ",
+    name: "Miércoles",
+    muscle: "Descanso",
+    exercises: [],
+  },
+  {
+    id: "jue",
+    label: "JUE",
+    name: "Jueves",
+    muscle: "Piernas",
+    exercises: [
+      { id: "e9", name: "Sentadilla libre", sets: 5, reps: 8, weight: 80 },
+      { id: "e10", name: "Prensa de pierna", sets: 4, reps: 12, weight: 120 },
+      { id: "e11", name: "Extensión de cuádriceps", sets: 3, reps: 15, weight: 45 },
+      { id: "e12", name: "Curl femoral", sets: 3, reps: 15, weight: 35 },
+    ],
+  },
+  {
+    id: "vie",
+    label: "VIE",
+    name: "Viernes",
+    muscle: "Hombros / Core",
+    exercises: [
+      { id: "e13", name: "Press militar barra", sets: 4, reps: 10, weight: 50 },
+      { id: "e14", name: "Elevaciones laterales", sets: 3, reps: 15, weight: 10 },
+      { id: "e15", name: "Plancha", sets: 3, reps: 60, weight: 0 },
+    ],
+  },
+  {
+    id: "sab",
+    label: "SÁB",
+    name: "Sábado",
+    muscle: "Full Body",
+    exercises: [
+      { id: "e16", name: "Peso muerto", sets: 4, reps: 6, weight: 100 },
+      { id: "e17", name: "Pull-ups supino", sets: 3, reps: 10, weight: 0 },
+      { id: "e18", name: "Hip thrust", sets: 4, reps: 12, weight: 80 },
+    ],
+  },
+  {
+    id: "dom",
+    label: "DOM",
+    name: "Domingo",
+    muscle: "Descanso",
+    exercises: [],
+  },
+];
+
+const TODAY_INDEX = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+
+// ─── ICONS ────────────────────────────────────────────────────────────────────
+const Icon = ({ name, size = 18 }) => {
+  const icons = {
+    dumbbell: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 5v14M18 5v14M6 8h12M6 16h12M2 8h4M2 16h4M18 8h4M18 16h4"/>
+      </svg>
+    ),
+    food: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>
+      </svg>
+    ),
+    plus: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    ),
+    trash: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+      </svg>
+    ),
+    edit: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+      </svg>
+    ),
+    check: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+    ),
+    fire: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+      </svg>
+    ),
+    x: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    ),
+    chevron: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
+    ),
+  };
+  return icons[name] || null;
+};
+
+// ─── STYLES ───────────────────────────────────────────────────────────────────
+const styles = `
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=DM+Sans:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0d0f;
+    --surface: #141416;
+    --surface2: #1c1c1f;
+    --surface3: #242428;
+    --border: #2a2a2e;
+    --border2: #3a3a3e;
+    --accent: #e8ff3c;
+    --accent2: #ff6b35;
+    --text: #f0f0f0;
+    --text2: #9a9aa0;
+    --text3: #5a5a62;
+    --red: #ff4545;
+    --green: #3cffa0;
+    --blue: #3ca0ff;
+    --protein: #ff6b35;
+    --carbs: #3ca0ff;
+    --fat: #ffd23c;
+  }
+
+  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; }
+
+  .app {
+    min-height: 100vh;
+    max-width: 480px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  /* Header */
+  .header {
+    padding: 20px 20px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .header-logo {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 900;
+    font-size: 26px;
+    letter-spacing: -0.5px;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+  .header-date {
+    font-size: 12px;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* Nav tabs */
+  .nav {
+    display: flex;
+    margin: 20px 20px 0;
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 4px;
+    gap: 4px;
+    border: 1px solid var(--border);
+  }
+  .nav-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 10px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--text3);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .nav-btn.active {
+    background: var(--accent);
+    color: #0d0d0f;
+  }
+  .nav-btn:not(.active):hover { color: var(--text2); background: var(--surface2); }
+
+  /* Scroll area */
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px 100px;
+    scrollbar-width: none;
+  }
+  .content::-webkit-scrollbar { display: none; }
+
+  /* Day strip */
+  .day-strip {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 20px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+  }
+  .day-strip::-webkit-scrollbar { display: none; }
+  .day-chip {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.15s;
+    min-width: 52px;
+  }
+  .day-chip.active {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .day-chip:not(.active):hover { border-color: var(--border2); }
+  .day-chip-label {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    color: var(--text2);
+  }
+  .day-chip.active .day-chip-label { color: #0d0d0f; }
+  .day-chip-dot {
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--text3);
+  }
+  .day-chip.active .day-chip-dot { background: #0d0d0f; }
+  .day-chip.has-exercises .day-chip-dot { background: var(--accent); }
+  .day-chip.active.has-exercises .day-chip-dot { background: #0d0d0f; }
+  .day-chip.today-chip { border-color: var(--accent2); }
+
+  /* Section title */
+  .section-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .section-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 900;
+    font-size: 28px;
+    text-transform: uppercase;
+    letter-spacing: -0.5px;
+    line-height: 1;
+  }
+  .section-subtitle {
+    font-size: 12px;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-weight: 500;
+  }
+  .section-badge {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: var(--surface2);
+    color: var(--text2);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border: 1px solid var(--border);
+  }
+
+  /* Rest day */
+  .rest-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    gap: 12px;
+    border-radius: 16px;
+    border: 2px dashed var(--border2);
+  }
+  .rest-day-emoji { font-size: 48px; }
+  .rest-day-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    font-size: 22px;
+    color: var(--text2);
+    text-transform: uppercase;
+  }
+  .rest-day-sub { font-size: 13px; color: var(--text3); text-align: center; }
+
+  /* Exercise card */
+  .exercise-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 10px;
+    transition: border-color 0.2s;
+  }
+  .exercise-card:hover { border-color: var(--border2); }
+  .exercise-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .exercise-name {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 17px;
+    letter-spacing: 0.2px;
+    flex: 1;
+  }
+  .exercise-name-input {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 17px;
+    background: var(--surface2);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 4px 8px;
+    flex: 1;
+    outline: none;
+  }
+  .exercise-actions { display: flex; gap: 6px; }
+  .icon-btn {
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; border-radius: 8px;
+    background: var(--surface2);
+    color: var(--text3);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .icon-btn:hover { background: var(--surface3); color: var(--text); }
+  .icon-btn.danger:hover { background: #ff454520; color: var(--red); }
+  .icon-btn.save:hover { background: #3cffa020; color: var(--green); }
+
+  /* Stats grid */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .stat-box {
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border: 1px solid var(--border);
+    position: relative;
+  }
+  .stat-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text3);
+    font-weight: 500;
+  }
+  .stat-value {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    font-size: 22px;
+    color: var(--text);
+    line-height: 1;
+  }
+  .stat-unit {
+    font-size: 11px;
+    color: var(--text3);
+  }
+  .stat-input {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    font-size: 20px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid var(--accent);
+    color: var(--text);
+    width: 100%;
+    outline: none;
+    line-height: 1;
+    padding: 0;
+  }
+
+  /* Add exercise btn */
+  .add-btn {
+    width: 100%;
+    padding: 13px;
+    border: 2px dashed var(--border2);
+    border-radius: 14px;
+    background: transparent;
+    color: var(--text3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 4px;
+  }
+  .add-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: #e8ff3c08;
+  }
+
+  /* Day name input */
+  .day-config { margin-bottom: 16px; }
+  .day-config-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .day-config-input {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    color: var(--text);
+    padding: 8px 12px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .day-config-input:focus { border-color: var(--accent); }
+
+  /* ── NUTRITION ── */
+  .date-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .date-nav-date {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    font-size: 22px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .date-nav-btn {
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text2);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .date-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Macro summary card */
+  .macro-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 14px;
+  }
+  .macro-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .macro-card-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 900;
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text2);
+  }
+  .kcal-display {
+    text-align: center;
+    margin-bottom: 16px;
+  }
+  .kcal-num {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 900;
+    font-size: 56px;
+    line-height: 1;
+    color: var(--accent);
+    letter-spacing: -2px;
+  }
+  .kcal-label { font-size: 12px; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; }
+
+  /* Macro bars */
+  .macro-bars { display: flex; flex-direction: column; gap: 10px; }
+  .macro-bar-row { display: flex; align-items: center; gap: 10px; }
+  .macro-bar-label {
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    min-width: 28px;
+    color: var(--text2);
+  }
+  .macro-bar-track {
+    flex: 1;
+    height: 6px;
+    background: var(--surface3);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .macro-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+  }
+  .macro-bar-val {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    min-width: 48px;
+    text-align: right;
+  }
+
+  /* Macro targets row */
+  .macro-targets {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .macro-target-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 10px;
+    text-align: center;
+  }
+  .macro-target-val {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    font-size: 24px;
+    line-height: 1;
+  }
+  .macro-target-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 3px; }
+
+  /* Meal section */
+  .meal-section { margin-bottom: 14px; }
+  .meal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px 12px 0 0;
+    cursor: pointer;
+  }
+  .meal-header.collapsed { border-radius: 12px; margin-bottom: 0; }
+  .meal-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .meal-kcal {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--text2);
+  }
+  .meal-body {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 12px 12px;
+    overflow: hidden;
+  }
+  .food-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .food-item:last-child { border-bottom: none; }
+  .food-name { flex: 1; font-size: 14px; font-weight: 400; }
+  .food-macros {
+    display: flex;
+    gap: 6px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .food-p { color: var(--protein); }
+  .food-c { color: var(--carbs); }
+  .food-f { color: var(--fat); }
+  .food-kcal { color: var(--text3); font-size: 13px; min-width: 42px; text-align: right; }
+
+  /* Add food modal */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75);
+    display: flex; align-items: flex-end;
+    z-index: 100;
+    backdrop-filter: blur(4px);
+  }
+  .modal {
+    background: var(--surface);
+    border-radius: 20px 20px 0 0;
+    padding: 24px 20px 40px;
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+    border: 1px solid var(--border2);
+    border-bottom: none;
+    animation: slideUp 0.25s ease;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  .modal-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 900;
+    font-size: 22px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .form-group { margin-bottom: 14px; }
+  .form-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; display: block; }
+  .form-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    color: var(--text);
+    padding: 10px 12px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-input:focus { border-color: var(--accent); }
+  .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .form-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .submit-btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--accent);
+    border: none;
+    border-radius: 12px;
+    color: #0d0d0f;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    font-size: 18px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    margin-top: 6px;
+  }
+  .submit-btn:hover { opacity: 0.88; }
+  .select-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    color: var(--text);
+    padding: 10px 12px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    outline: none;
+    appearance: none;
+  }
+
+  /* Targets config */
+  .targets-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    margin-bottom: 14px;
+    color: var(--text2);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .targets-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+  .targets-panel-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text2);
+    margin-bottom: 12px;
+  }
+
+  /* Empty state */
+  .empty {
+    text-align: center;
+    padding: 30px;
+    color: var(--text3);
+    font-size: 13px;
+  }
+`;
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function uid() { return Math.random().toString(36).slice(2, 9); }
+
+function formatDate(d) {
+  return d.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
+}
+function dateKey(d) { return d.toISOString().slice(0, 10); }
+
+const MACROS_PER_GRAM = { protein: 4, carbs: 4, fat: 9 };
+function calcKcal(p, c, f) { return Math.round(p * 4 + c * 4 + f * 9); }
+
+const MEAL_NAMES = ["Desayuno", "Almuerzo", "Merienda", "Cena", "Extra"];
+
+// ─── COMPONENTS ───────────────────────────────────────────────────────────────
+
+function ExerciseCard({ exercise, onUpdate, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(exercise);
+
+  function handleSave() {
+    onUpdate(draft);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <div className="exercise-card" style={{ borderColor: "var(--accent)" }}>
+        <div className="exercise-top">
+          <input
+            className="exercise-name-input"
+            value={draft.name}
+            onChange={e => setDraft(d => ({ ...d, name: e.target.value }))}
+          />
+          <div className="exercise-actions">
+            <button className="icon-btn save" onClick={handleSave}><Icon name="check" size={15} /></button>
+            <button className="icon-btn danger" onClick={() => setEditing(false)}><Icon name="x" size={15} /></button>
+          </div>
+        </div>
+        <div className="stats-grid">
+          {[
+            { key: "sets", label: "Series", unit: "" },
+            { key: "reps", label: "Reps", unit: "" },
+            { key: "weight", label: "Peso", unit: "kg" },
+          ].map(({ key, label, unit }) => (
+            <div className="stat-box" key={key}>
+              <span className="stat-label">{label}</span>
+              <input
+                className="stat-input"
+                type="number"
+                value={draft[key]}
+                onChange={e => setDraft(d => ({ ...d, [key]: parseFloat(e.target.value) || 0 }))}
+              />
+              {unit && <span className="stat-unit">{unit}</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="exercise-card">
+      <div className="exercise-top">
+        <span className="exercise-name">{exercise.name}</span>
+        <div className="exercise-actions">
+          <button className="icon-btn" onClick={() => { setDraft(exercise); setEditing(true); }}><Icon name="edit" size={15} /></button>
+          <button className="icon-btn danger" onClick={onDelete}><Icon name="trash" size={15} /></button>
+        </div>
+      </div>
+      <div className="stats-grid">
+        <div className="stat-box">
+          <span className="stat-label">Series</span>
+          <span className="stat-value">{exercise.sets}</span>
+        </div>
+        <div className="stat-box">
+          <span className="stat-label">Reps</span>
+          <span className="stat-value">{exercise.reps}</span>
+        </div>
+        <div className="stat-box">
+          <span className="stat-label">Peso</span>
+          <span className="stat-value">{exercise.weight}<span className="stat-unit"> kg</span></span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── WORKOUT TAB ──────────────────────────────────────────────────────────────
+function WorkoutTab({ routine, setRoutine }) {
+  const [selectedDay, setSelectedDay] = useState(TODAY_INDEX);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newExercise, setNewExercise] = useState({ name: "", sets: 3, reps: 10, weight: 0 });
+
+  const day = routine[selectedDay];
+
+  function updateExercise(idx, updated) {
+    const newRoutine = routine.map((d, di) =>
+      di === selectedDay
+        ? { ...d, exercises: d.exercises.map((e, ei) => ei === idx ? { ...e, ...updated } : e) }
+        : d
+    );
+    setRoutine(newRoutine);
+  }
+
+  function deleteExercise(idx) {
+    const newRoutine = routine.map((d, di) =>
+      di === selectedDay
+        ? { ...d, exercises: d.exercises.filter((_, ei) => ei !== idx) }
+        : d
+    );
+    setRoutine(newRoutine);
+  }
+
+  function addExercise() {
+    if (!newExercise.name.trim()) return;
+    const newRoutine = routine.map((d, di) =>
+      di === selectedDay
+        ? { ...d, exercises: [...d.exercises, { id: uid(), ...newExercise }] }
+        : d
+    );
+    setRoutine(newRoutine);
+    setNewExercise({ name: "", sets: 3, reps: 10, weight: 0 });
+    setShowAddModal(false);
+  }
+
+  function updateDayConfig(field, value) {
+    const newRoutine = routine.map((d, di) =>
+      di === selectedDay ? { ...d, [field]: value } : d
+    );
+    setRoutine(newRoutine);
+  }
+
+  const isRest = day.muscle === "Descanso" && day.exercises.length === 0;
+
+  return (
+    <>
+      <div className="day-strip">
+        {routine.map((d, i) => (
+          <button
+            key={d.id}
+            className={`day-chip ${i === selectedDay ? "active" : ""} ${i === TODAY_INDEX ? "today-chip" : ""} ${d.exercises.length > 0 ? "has-exercises" : ""}`}
+            onClick={() => setSelectedDay(i)}
+          >
+            <span className="day-chip-label">{d.label}</span>
+            <span className="day-chip-dot" />
+          </button>
+        ))}
+      </div>
+
+      <div className="section-header">
+        <div>
+          <div className="section-title">{day.name}</div>
+          <div className="section-subtitle">{day.muscle}</div>
+        </div>
+        {day.exercises.length > 0 && (
+          <span className="section-badge">{day.exercises.length} ejercicios</span>
+        )}
+      </div>
+
+      <div className="day-config">
+        <div className="day-config-label">Grupo muscular</div>
+        <input
+          className="day-config-input"
+          value={day.muscle}
+          placeholder="Ej: Pecho / Tríceps"
+          onChange={e => updateDayConfig("muscle", e.target.value)}
+        />
+      </div>
+
+      {isRest ? (
+        <div className="rest-day">
+          <span className="rest-day-emoji">😴</span>
+          <span className="rest-day-title">Día de descanso</span>
+          <span className="rest-day-sub">Cambiá el grupo muscular arriba<br/>para convertirlo en un día de entreno</span>
+        </div>
+      ) : (
+        <>
+          {day.exercises.map((ex, idx) => (
+            <ExerciseCard
+              key={ex.id}
+              exercise={ex}
+              onUpdate={updated => updateExercise(idx, updated)}
+              onDelete={() => deleteExercise(idx)}
+            />
+          ))}
+        </>
+      )}
+
+      <button className="add-btn" onClick={() => setShowAddModal(true)}>
+        <Icon name="plus" size={16} />
+        Agregar ejercicio
+      </button>
+
+      {showAddModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowAddModal(false)}>
+          <div className="modal">
+            <div className="modal-title">
+              Nuevo Ejercicio
+              <button className="icon-btn" onClick={() => setShowAddModal(false)}><Icon name="x" size={18} /></button>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Nombre</label>
+              <input className="form-input" value={newExercise.name} onChange={e => setNewExercise(d => ({ ...d, name: e.target.value }))} placeholder="Ej: Press banca plano" />
+            </div>
+            <div className="form-grid-4">
+              <div className="form-group">
+                <label className="form-label">Series</label>
+                <input className="form-input" type="number" value={newExercise.sets} onChange={e => setNewExercise(d => ({ ...d, sets: +e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Reps</label>
+                <input className="form-input" type="number" value={newExercise.reps} onChange={e => setNewExercise(d => ({ ...d, reps: +e.target.value }))} />
+              </div>
+              <div className="form-group" style={{gridColumn: "span 2"}}>
+                <label className="form-label">Peso (kg)</label>
+                <input className="form-input" type="number" value={newExercise.weight} onChange={e => setNewExercise(d => ({ ...d, weight: +e.target.value }))} />
+              </div>
+            </div>
+            <button className="submit-btn" onClick={addExercise}>Agregar</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── NUTRITION TAB ────────────────────────────────────────────────────────────
+function NutritionTab({ nutrition, setNutrition }) {
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [selectedMeal, setSelectedMeal] = useState(0);
+  const [showTargets, setShowTargets] = useState(false);
+  const [collapsedMeals, setCollapsedMeals] = useState({});
+  const [newFood, setNewFood] = useState({ name: "", grams: "", protein: "", carbs: "", fat: "" });
+
+  const dk = dateKey(currentDate);
+  const dayData = nutrition[dk] || { meals: MEAL_NAMES.map(name => ({ name, items: [] })), targets: { protein: 150, carbs: 200, fat: 65 } };
+
+  function saveDay(updated) {
+    setNutrition(prev => ({ ...prev, [dk]: updated }));
+  }
+
+  function updateTargets(field, val) {
+    saveDay({ ...dayData, targets: { ...dayData.targets, [field]: +val } });
+  }
+
+  function addFood() {
+    if (!newFood.name.trim()) return;
+    const item = {
+      id: uid(),
+      name: newFood.name,
+      grams: +newFood.grams || 0,
+      protein: +newFood.protein || 0,
+      carbs: +newFood.carbs || 0,
+      fat: +newFood.fat || 0,
+    };
+    const meals = dayData.meals.map((m, i) =>
+      i === selectedMeal ? { ...m, items: [...m.items, item] } : m
+    );
+    saveDay({ ...dayData, meals });
+    setNewFood({ name: "", grams: "", protein: "", carbs: "", fat: "" });
+    setShowAddModal(false);
+  }
+
+  function deleteFood(mealIdx, itemIdx) {
+    const meals = dayData.meals.map((m, i) =>
+      i === mealIdx ? { ...m, items: m.items.filter((_, j) => j !== itemIdx) } : m
+    );
+    saveDay({ ...dayData, meals });
+  }
+
+  const totals = dayData.meals.reduce((acc, m) => {
+    m.items.forEach(item => {
+      acc.protein += item.protein;
+      acc.carbs += item.carbs;
+      acc.fat += item.fat;
+    });
+    return acc;
+  }, { protein: 0, carbs: 0, fat: 0 });
+
+  const totalKcal = calcKcal(totals.protein, totals.carbs, totals.fat);
+  const targetKcal = calcKcal(dayData.targets.protein, dayData.targets.carbs, dayData.targets.fat);
+
+  function pct(val, target) { return Math.min(100, Math.round((val / target) * 100)) || 0; }
+
+  function changeDate(delta) {
+    const d = new Date(currentDate);
+    d.setDate(d.getDate() + delta);
+    setCurrentDate(d);
+  }
+
+  function toggleMeal(i) {
+    setCollapsedMeals(prev => ({ ...prev, [i]: !prev[i] }));
+  }
+
+  const isToday = dateKey(currentDate) === dateKey(new Date());
+
+  return (
+    <>
+      {/* Date nav */}
+      <div className="date-nav">
+        <button className="date-nav-btn" onClick={() => changeDate(-1)}>
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span className="date-nav-date">{isToday ? "Hoy" : formatDate(currentDate)}</span>
+        <button className="date-nav-btn" onClick={() => changeDate(1)}>
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+
+      {/* Macro summary */}
+      <div className="macro-card">
+        <div className="kcal-display">
+          <div className="kcal-num">{totalKcal}</div>
+          <div className="kcal-label">de {targetKcal} kcal</div>
+        </div>
+        <div className="macro-bars">
+          {[
+            { key: "protein", label: "P", color: "var(--protein)" },
+            { key: "carbs", label: "C", color: "var(--carbs)" },
+            { key: "fat", label: "G", color: "var(--fat)" },
+          ].map(({ key, label, color }) => (
+            <div className="macro-bar-row" key={key}>
+              <span className="macro-bar-label">{label}</span>
+              <div className="macro-bar-track">
+                <div className="macro-bar-fill" style={{ width: `${pct(totals[key], dayData.targets[key])}%`, background: color }} />
+              </div>
+              <span className="macro-bar-val" style={{ color }}>
+                {Math.round(totals[key])}<span style={{ fontSize: 10, color: "var(--text3)" }}>/{dayData.targets[key]}g</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Targets toggle */}
+      <button className="targets-toggle" onClick={() => setShowTargets(!showTargets)}>
+        <Icon name="edit" size={14} />
+        {showTargets ? "Cerrar objetivos" : "Editar objetivos diarios"}
+      </button>
+      {showTargets && (
+        <div className="targets-panel">
+          <div className="targets-panel-title">Objetivos diarios</div>
+          <div className="form-grid">
+            {[
+              { key: "protein", label: "Proteínas (g)", color: "var(--protein)" },
+              { key: "carbs", label: "Carbos (g)", color: "var(--carbs)" },
+              { key: "fat", label: "Grasas (g)", color: "var(--fat)" },
+            ].map(({ key, label, color }) => (
+              <div className="form-group" key={key} style={key === "fat" ? { gridColumn: "span 2" } : {}}>
+                <label className="form-label" style={{ color }}>{label}</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  value={dayData.targets[key]}
+                  onChange={e => updateTargets(key, e.target.value)}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Meals */}
+      {dayData.meals.map((meal, mealIdx) => {
+        const mealKcal = meal.items.reduce((acc, i) => acc + calcKcal(i.protein, i.carbs, i.fat), 0);
+        const collapsed = collapsedMeals[mealIdx];
+        return (
+          <div className="meal-section" key={mealIdx}>
+            <div
+              className={`meal-header ${collapsed ? "collapsed" : ""}`}
+              onClick={() => toggleMeal(mealIdx)}
+              style={{ marginBottom: collapsed ? 8 : 0 }}
+            >
+              <span className="meal-title">{meal.name}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="meal-kcal">{mealKcal} kcal</span>
+                <button
+                  className="icon-btn"
+                  style={{ width: 28, height: 28 }}
+                  onClick={e => { e.stopPropagation(); setSelectedMeal(mealIdx); setShowAddModal(true); }}
+                >
+                  <Icon name="plus" size={14} />
+                </button>
+              </div>
+            </div>
+            {!collapsed && (
+              <div className="meal-body">
+                {meal.items.length === 0 ? (
+                  <div className="empty">Sin alimentos aún</div>
+                ) : (
+                  meal.items.map((item, itemIdx) => (
+                    <div className="food-item" key={item.id}>
+                      <div style={{ flex: 1 }}>
+                        <div className="food-name">{item.name}</div>
+                        {item.grams > 0 && <div style={{ fontSize: 11, color: "var(--text3)" }}>{item.grams}g</div>}
+                      </div>
+                      <div className="food-macros">
+                        <span className="food-p">{Math.round(item.protein)}P</span>
+                        <span className="food-c">{Math.round(item.carbs)}C</span>
+                        <span className="food-f">{Math.round(item.fat)}G</span>
+                      </div>
+                      <span className="food-kcal">{calcKcal(item.protein, item.carbs, item.fat)} kcal</span>
+                      <button className="icon-btn danger" style={{ width: 28, height: 28 }} onClick={() => deleteFood(mealIdx, itemIdx)}>
+                        <Icon name="trash" size={13} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {showAddModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowAddModal(false)}>
+          <div className="modal">
+            <div className="modal-title">
+              Agregar alimento
+              <button className="icon-btn" onClick={() => setShowAddModal(false)}><Icon name="x" size={18} /></button>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Comida</label>
+              <select className="select-input" value={selectedMeal} onChange={e => setSelectedMeal(+e.target.value)}>
+                {MEAL_NAMES.map((n, i) => <option key={i} value={i}>{n}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Nombre del alimento</label>
+              <input className="form-input" value={newFood.name} onChange={e => setNewFood(d => ({ ...d, name: e.target.value }))} placeholder="Ej: Pechuga de pollo" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Gramos (opcional)</label>
+              <input className="form-input" type="number" value={newFood.grams} onChange={e => setNewFood(d => ({ ...d, grams: e.target.value }))} placeholder="150" />
+            </div>
+            <div className="form-grid-4">
+              <div className="form-group" style={{ gridColumn: "span 2" }}>
+                <label className="form-label" style={{ color: "var(--protein)" }}>Proteínas (g)</label>
+                <input className="form-input" type="number" value={newFood.protein} onChange={e => setNewFood(d => ({ ...d, protein: e.target.value }))} placeholder="30" />
+              </div>
+              <div className="form-group" style={{ gridColumn: "span 2" }}>
+                <label className="form-label" style={{ color: "var(--carbs)" }}>Carbos (g)</label>
+                <input className="form-input" type="number" value={newFood.carbs} onChange={e => setNewFood(d => ({ ...d, carbs: e.target.value }))} placeholder="20" />
+              </div>
+              <div className="form-group" style={{ gridColumn: "span 4" }}>
+                <label className="form-label" style={{ color: "var(--fat)" }}>Grasas (g)</label>
+                <input className="form-input" type="number" value={newFood.fat} onChange={e => setNewFood(d => ({ ...d, fat: e.target.value }))} placeholder="5" />
+              </div>
+            </div>
+            <button className="submit-btn" onClick={addFood}>Agregar alimento</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── APP ROOT ─────────────────────────────────────────────────────────────────
+export default function App() {
+  const [tab, setTab] = useState("workout");
+  const [routine, setRoutine] = useState(DEFAULT_ROUTINE);
+  const [nutrition, setNutrition] = useState({});
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    async function loadData() {
+      const r = await load(STORAGE_KEYS.ROUTINE);
+      if (r) setRoutine(r);
+      const n = await load(STORAGE_KEYS.NUTRITION);
+      if (n) setNutrition(n);
+      setReady(true);
+    }
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    if (ready) save(STORAGE_KEYS.ROUTINE, routine);
+  }, [routine, ready]);
+
+  useEffect(() => {
+    if (ready) save(STORAGE_KEYS.NUTRITION, nutrition);
+  }, [nutrition, ready]);
+
+  const today = new Date().toLocaleDateString("es-AR", { day: "numeric", month: "short" });
+
+  if (!ready) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "var(--bg)" }}>
+      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 22, color: "var(--accent)", fontWeight: 900, letterSpacing: 2, textTransform: "uppercase" }}>Cargando...</div>
+    </div>
+  );
+
+  return (
+    <>
+      <style>{styles}</style>
+      <div className="app">
+        <div className="header">
+          <span className="header-logo">⚡ GymLog</span>
+          <span className="header-date">{today}</span>
+        </div>
+        <div className="nav">
+          <button className={`nav-btn ${tab === "workout" ? "active" : ""}`} onClick={() => setTab("workout")}>
+            <Icon name="dumbbell" size={16} /> Entrenos
+          </button>
+          <button className={`nav-btn ${tab === "nutrition" ? "active" : ""}`} onClick={() => setTab("nutrition")}>
+            <Icon name="fire" size={16} /> Nutrición
+          </button>
+        </div>
+        <div className="content">
+          {tab === "workout"
+            ? <WorkoutTab routine={routine} setRoutine={setRoutine} />
+            : <NutritionTab nutrition={nutrition} setNutrition={setNutrition} />
+          }
+        </div>
+      </div>
+    </>
+  );
+}
